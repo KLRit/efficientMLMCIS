@@ -6,11 +6,11 @@ Entry by
 /test/testscript.py 
 
 
-Importance Sampling
-A. Kebaier, J. Lelong
-https://arxiv.org/abs/1510.03590
+Benchmarking problems /  Sydow et al /http://www.it.uu.se/research/scientific_computing/project/compfin/benchop
 
-Multilevel Monte Carlo
-M. B. Giles
-https://people.maths.ox.ac.uk/gilesm/mlmc.html
+Importance Sampling & SAA / A. Kebaier, J. Lelong /  https://arxiv.org/abs/1510.03590
+
+Multilevel Monte Carlo / M. B. Giles /https://people.maths.ox.ac.uk/gilesm/mlmc.html
+
+
 
