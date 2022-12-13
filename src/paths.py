@@ -119,7 +119,7 @@ class paths():
             #print("resetting paths")
             self.option.reset_paths(self)
 
-        #self.theta123 = 0.0
+
 
 
 
@@ -159,19 +159,6 @@ class paths():
             X = X * (1 / self.Z())
         return tc.var_mean(X)
 
-    def Z234(self):
-        """Return the value of the Radon-Nikodym-Derivative Z
-        respective to the importance-sampled Wiener paths."""
-        return tc.prod(tc.exp( self.integ_theta_dW + 0.5 * self.integ_thetasq_dt), dim = 1, keepdim= True)
-
-    def Z123(self):
-        """Return the value of the Radon-Nikodym-Derivative Z
-        respective to the importance-sampled Wiener paths."""
-        # print(self.n_slice, "n_slice")
-        # print(tc.var_mean(self.integ_theta_dW[:self.n_slice]) )
-        return tc.prod(tc.exp( self.integ_theta_dW[:self.n_slice]
-                               + 0.5 * self.integ_thetasq_dt[:self.n_slice]),
-                       dim = 1, keepdim= True)
 
     def Z(self):
         """Return the value of the Radon-Nikodym-Derivative Z
@@ -192,28 +179,6 @@ class paths():
                                + 0.5 * integ_theta_sqdT)),
                        dim = 1, keepdim= True)
 
-    def Z_inv213(self):
-        """Return the inverse value of the Radon-Nikodym-Derivative Z
-        respective to the importance-sampled Wiener paths."""
-        return tc.prod(tc.exp( - (self.integ_theta_dW[:self.n_slice]
-                                  + 0.5 * self.integ_thetasq_dt[:self.n_slice])),
-                       dim = 1, keepdim= True)
-
-    def Z_inv_alt(self):
-        return tc.prod(tc.exp( - (self.integ_theta_dW[:self.n_slice]
-                                  - 0.5 * self.integ_thetasq_dt[:self.n_slice])),
-                       dim = 1, keepdim= True)
-    def Z_alt(self):
-        return tc.prod(tc.exp( self.integ_theta_dW[:self.n_slice]
-                               - 0.5 * self.integ_thetasq_dt[:self.n_slice]),
-                       dim = 1, keepdim= True)
-
-    def accumulate_rnd_locconst(self, i, dW_ti, theta_ti, dt):
-        self.integ_theta_dW = self.integ_theta_dW + dW_ti * theta_ti
-        self.integ_thetasq_dt = (theta_ti ** 2) * dt
-
-    def accumulate_rnd_globconst(self, i, dW_ti, theta_ti, dt):
-        pass
 
     def rnd_normal_dW(self, step_i, dt):
         #dW_t = math.sqrt(dt) * tc.normal(0.0, 1.0, self.dim, device=device0)
@@ -349,20 +314,6 @@ class paths():
 
             return arg
 
-        def newton123(func, theta_init, n_steps=100):
-            theta_init.requires_grad = True
-            for i in range(n_steps):
-                previous = theta_init.clone()
-                val = func(theta_init)
-                val.backward()
-
-                theta_init.data = theta_init.data - (val / theta_init.grad).data
-
-                theta_init.grad.data.zero_()
-
-                if tc.abs(theta_init - previous) < 0.1:
-                    return theta_init
-            return theta_init
 
         # def newton(func, guess, threshold=1e-7):
         #     guess.requires_grad = True
@@ -396,120 +347,6 @@ class paths():
         val = EdXsqZ_Tensor(theta)
         return theta, val
 
-
-    def optimize_theta123(self, option = None, theta_init = None):
-        start = time.time()
-        dX = self.dX(option = option)
-
-        dXsq = dX ** 2
-        T = option.expiry
-        n_steps = self.dW.shape[0]
-        dt = T/n_steps
-
-        constant_theta = self.antithetic
-        #constant_theta = False
-        constant_theta = True
-        if theta_init == None:
-            if constant_theta:
-                theta_init = tc.tensor([0.0] * self.n_assets, device = device0, requires_grad= True)
-            else:
-                theta_init = tc.full([n_steps, self.n_assets], 0.0, device = device0, requires_grad= True)
-            #theta_init = tc.full([min(n_theta_steps, n_steps), self.n_assets], 0.0, device = device0, requires_grad= True)
-            #theta_init.fill_(0.0)
-
-        # n_theta_steps = min(n_theta_steps, n_steps)
-        # theta_step_sizes = [2, 1, 1]
-        # n_strata = [1, 2, 4]
-        # theta_dt = theta_step_sizes * dt
-        if constant_theta:
-            #W_T = self.dW_T[:self.n_slice]
-            #W_T = tc.sum(self.dW, 0)
-            W_T = self.dW_t[:self.n_slice]
-            def EdXsqZ_Tensor(theta):
-                integ_theta_dW = theta * W_T
-                integ_thetasq_dt = (theta ** 2) * T
-                exp_integs = tc.exp( - integ_theta_dW + 0.5 * integ_thetasq_dt )
-                #print(exp_integs.shape, "shapezzz")
-                EdXsqZ = tc.mean(dXsq * tc.prod(exp_integs, dim =1, keepdim= True), dim = 0)
-                return EdXsqZ
-
-            def EdXsqZ_TensorGrad(theta):
-                integ_theta_dW = theta * W_T
-                integ_thetasq_dt = (theta ** 2) * T
-                exp_integs = tc.exp(- integ_theta_dW + 0.5 * integ_thetasq_dt)
-                #print(exp_integs.shape)
-                #print(tc.prod(exp_integs, dim=1, keepdim=True).shape)
-                #print(dXsq.shape)
-                EdXsqZ = tc.mean(dXsq * tc.prod(exp_integs, dim=1, keepdim=True), dim=0)
-
-                #print(EdXsqZ, "EdXsqZ")
-                #print(theta, "theta")
-                EdXsqZ.backward()
-                return EdXsqZ.data, theta.grad.data
-
-        else:
-            def EdXsqZ_Tensor(theta):
-                integ_theta_dW = tc.sum( theta[:,None,:] * self.dW, dim = 0)
-                integ_thetasq_dt = tc.sum((theta ** 2) * dt)
-                exp_integs = tc.exp( - integ_theta_dW + 0.5 * integ_thetasq_dt )
-                EdXsqZ = tc.mean(dXsq * tc.prod(exp_integs, dim =1, keepdim= True), dim = 0)
-                return EdXsqZ
-
-            def EdXsqZ_TensorGrad(theta):
-                integ_theta_dW = tc.sum( theta[:,None,:] * self.dW, dim = 0)
-                integ_thetasq_dt = tc.sum((theta ** 2) * dt)
-                exp_integs = tc.exp( - integ_theta_dW + 0.5 * integ_thetasq_dt )
-                EdXsqZ = tc.mean(dXsq * tc.prod(exp_integs, dim =1, keepdim= True),dim = 0)
-                EdXsqZ.backward()
-                return EdXsqZ.data, theta.grad.data
-
-
-
-        #theta, val = grad_line_search(EdXsqZ_Tensor, theta_init, max_steps=10, max_dirchanges = 10, lr=1)
-        #return theta, val
-
-        theta = theta_init
-        val, grad = EdXsqZ_TensorGrad(theta_init)
-
-        grad = grad / tc.norm(grad)
-        theta = theta_init
-        theta.requires_grad = False
-
-        lr = 1
-        max_steps = 100 # 10
-        max_overshots = 30
-        steps = 0
-        # while (not converged) and (steps < max_steps):
-        overshot_counter = 0
-        while (steps < max_steps) and (overshot_counter < max_overshots):
-            # print(teta)
-            proposed_theta = theta - lr * grad
-            # print(proposed_teta)
-            proposed_val = EdXsqZ_Tensor(proposed_theta)
-
-            # print(proposed_val)
-            if proposed_val < 0.95 * val:
-                theta = proposed_theta
-                #self.teta_path.append(teta)
-                val = proposed_val
-            elif overshot_counter < max_overshots:
-                # lower learning rate. change direction
-                lr = lr / 2
-                overshot_counter += 1
-                theta.requires_grad = True
-                #val, grad = EdXsqZ_TensorGrad(theta)
-                val = EdXsqZ_Tensor(theta)
-                val.backward()
-                grad = theta.grad
-                grad = grad / tc.norm(grad)
-                theta.requires_grad = False
-
-            steps += 1
-
-        end = time.time()
-        #print("GRADDDIENTENVERFAHREN", end - start, "s")
-        #print(theta)
-        return theta, val
 
     def init_tensors(self, level, n_sims, assets, option):
         """deprecate"""
@@ -615,16 +452,7 @@ class paths_Heston(paths):
         return tc.prod(tc.exp( self.integ_theta_dW[:self.n_slice] + 0.5 * self.integ_thetasq_dt #[:self.n_slice]
                                + self.integ_voltheta_dWv[:self.n_slice] + 0.5 * self.integ_volthetasq_dt), dim = 1, keepdim= True)
 
-    def Z123(self):
-        """Return the value of the Radon-Nikodym-Derivative Z and Zv
-        respective to the importance-sampled Wiener paths."""
-        integ_theta_dW = self.dW_T[:n_slice]
-        integ_thetasq_dt = self.theta * self.T
 
-        integ_volthetasq_dt = self.voltheta * self.T
-        integ_voltheta_dW = self.dWv_T[:n_slice]
-        return tc.prod(tc.exp( self.integ_theta_dW[:self.n_slice] + 0.5 * self.integ_thetasq_dt #[:self.n_slice]
-                               + self.integ_voltheta_dWv[:self.n_slice] + 0.5 * self.integ_volthetasq_dt), dim = 1, keepdim= True)
 
 
     def reset_tensors(self, level, mc_calling):
@@ -684,106 +512,7 @@ class paths_Heston(paths):
         return tc.prod(tc.exp( - (self.integ_theta_dW + 0.5 * self.integ_thetasq_dt
                               + self.integ_voltheta_dWv + 0.5 * self.integ_volthetasq_dt)), dim = 1, keepdim=True)
 
-    def optimize_theta1(self, option=None, theta_init=None, voltheta_init = None):
-        start = time.time()
-        dX = self.dX(option=option)
-
-        dXsq = dX ** 2
-        T = option.expiry
-        n_steps = self.n_steps
-        dt = T / n_steps
-
-        constant_theta = self.antithetic
-        # constant_theta = False
-        constant_theta = True
-        if theta_init == None:
-            if constant_theta:
-                theta_init = tc.tensor([0.0] * self.n_assets, device=device0, requires_grad=True)
-            else:
-                pass
-                #theta_init = tc.full([n_steps, self.n_assets], 0.0, device=device0, requires_grad=True)
-            # theta_init = tc.full([min(n_theta_steps, n_steps), self.n_assets], 0.0, device = device0, requires_grad= True)
-            # theta_init.fill_(0.0)
-
-        # n_theta_steps = min(n_theta_steps, n_steps)
-        # theta_step_sizes = [2, 1, 1]
-        # n_strata = [1, 2, 4]
-        # theta_dt = theta_step_sizes * dt
-        if constant_theta:
-            #W_T = tc.sum(self.dW, 0)
-            #W_T = self.dW_T[:self.n_slice]
-            W_T = self.dW_t[:self.n_slice]
-
-            def EdXsqZ_Tensor(theta):
-                integ_theta_dW = theta * W_T
-                integ_thetasq_dt = (theta ** 2) * T
-                exp_integs = tc.exp(- integ_theta_dW + 0.5 * integ_thetasq_dt)
-                # print(exp_integs.shape, "shapezzz")
-                #EdXsqZ = tc.mean(dXsq * tc.prod(exp_integs, dim=1, keepdim=True), dim=0)
-                EdXsqZ = tc.mean(dXsq * tc.prod(tc.exp(- theta * W_T + 0.5 * (theta ** 2) * T), dim=1, keepdim=True), dim=0)
-                return EdXsqZ
-
-            def EdXsqZ_TensorGrad(theta):
-                integ_theta_dW = theta * W_T
-                integ_thetasq_dt = (theta ** 2) * T
-                exp_integs = tc.exp(- integ_theta_dW + 0.5 * integ_thetasq_dt)
-                # print(exp_integs.shape)
-                # print(tc.prod(exp_integs, dim=1, keepdim=True).shape)
-                # print(dXsq.shape)
-                EdXsqZ = tc.mean(dXsq * tc.prod(exp_integs, dim=1, keepdim=True), dim=0)
-
-                # print(EdXsqZ, "EdXsqZ")
-                # print(theta, "theta")
-                EdXsqZ.backward()
-                return EdXsqZ.data, theta.grad.data
-
-        def grad_desc(func, arg_init, max_steps=100, lr=0.2):
-            i = 0
-
-            factor = 10000
-
-            val0 = factor * func(arg_init)
-            arg = arg_init
-            arg.requires_grad = True
-
-
-
-            def func1(arg):
-                return factor * func(arg)
-            old_val = val0
-            while i < max_steps:
-                # print("grad desc", i, "///////////////////////////")
-                # val, grad = func(arg)
-                val = factor * func(arg)
-                print(val)
-                val.backward()
-                grad = arg.grad
-                grad = grad / tc.norm(grad)
-                with tc.no_grad():
-                    arg = arg - lr * grad
-                    lr = 0.75 * lr
-                #arg = arg - lr * grad
-                arg.requires_grad = True
-                i = i + 1
-
-            arg.requires_grad = False
-            val1 = func(arg)
-
-            # print(arg_init, "arginit")
-            # print(val0, "old val")
-            # print(val1, "new val")
-            # print(arg, "new arg")
-
-            return arg
-
-        #theta_init = tc.tensor([0.0] * self.n_assets, device=device0, requires_grad=True)
-        theta_init1 = theta_init.clone()
-        theta_init1.requires_grad = True
-        theta = grad_desc(EdXsqZ_Tensor, theta_init1, max_steps=20, lr=1)
-        theta.requires_grad = False
-        val = EdXsqZ_Tensor(theta)
-        return theta, val
-#b = 0.25
+    
 def normalu(dim, a = float(2 ** -12), b = float(1- (2 ** - 12)), device = "cuda:0"):
     #return tc.normal(0.0, 1.0, dim, device= device0)
     a = max(a, float(2 ** -12))
